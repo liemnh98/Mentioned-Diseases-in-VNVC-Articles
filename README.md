@@ -48,7 +48,7 @@ Inside the `keys` directory, create a file named `Gemini_API_Key.txt` and paste 
 ```
 keys/Gemini_API_Key.txt
 ```
-The Gemini API key can be generated from [here]("https://aistudio.google.com/apikey").
+The Gemini API key can be generated from [here](https://aistudio.google.com/apikey).
 
 ## 📥 Input & Output
 
