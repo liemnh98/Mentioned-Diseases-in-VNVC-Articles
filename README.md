@@ -14,8 +14,8 @@ This project aims to classify blog content based on predefined categories or top
 ### 1. Clone this repository
 
 ```bash
-git clone <your-repository-url>
-cd Blogs_Contents_Classification # Adjust directory name if different
+git clone https://github.com/liemnh98/Mentioned-Diseases-in-VNVC-Articles.git
+cd Mentioned-Diseases-in-VNVC-Articles
 ```
 
 ### 2. Create and activate a virtual environment
@@ -39,7 +39,6 @@ source .venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
-(You will need to create a `requirements.txt` file containing `pandas` and `google-generativeai`)
 
 ### 4. Set up Gemini API Key
 
@@ -49,7 +48,7 @@ Inside the `keys` directory, create a file named `Gemini_API_Key.txt` and paste 
 ```
 keys/Gemini_API_Key.txt
 ```
-(The file should contain only the API key string)
+The Gemini API key can be generated from [here]("https://aistudio.google.com/apikey").
 
 ## 📥 Input & Output
 
@@ -114,7 +113,6 @@ The script will process each URL, query the Gemini API, and save the results to 
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
-(You will need to create a LICENSE file with the MIT license text)
 
 ## 🙋 Author
 
