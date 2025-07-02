@@ -3,14 +3,17 @@ import pandas as pd
 from google import genai
 from google.genai import types
 from datetime import datetime
+import time
+import sys
+from google.genai.errors import ClientError
 
 # Configs
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 mapping_output_dir = f"data_demo/output/mapping_results_test.csv"
 
-model_id = 'gemini-2.5-flash-preview-04-17'
-diseases_dir = 'data_demo/input/TenNhomBenh.xlsx'
-urls_dir = 'data_demo/input/urls_test.csv'
+model_id = "gemini-2.5-flash-preview-04-17"
+diseases_dir = "data_demo/input/TenNhomBenh.xlsx"
+urls_dir = "data_demo/input/urls_test.csv"
 
 # load key
 with open("keys/Gemini_API_Key.txt", "r") as file:
@@ -20,16 +23,17 @@ with open("keys/Gemini_API_Key.txt", "r") as file:
 diseases = pd.read_excel(diseases_dir)
 
 # Transform diseases to a list, separated by semi-colon
-diseases_list = diseases['TenNhomBenh'].tolist()
-diseases_list = ';'.join(diseases_list)
+diseases_list = diseases["TenNhomBenh"].tolist()
+diseases_list = ";".join(diseases_list)
 
 # Load list of urls
 urls = pd.read_csv(urls_dir)
-urls.rename(columns={0: 'url'}, inplace=True)
-urls['url'] = urls['destinationURL_cleaned'].str.strip()
+urls.rename(columns={0: "url"}, inplace=True)
+urls["url"] = urls["destinationURL_cleaned"].str.strip()
 
 # Slicing the urls to get a subset for testing
-urls = urls.iloc[401:800].reset_index(drop=True)
+urls = urls.iloc[801:].reset_index(drop=True)
+urls
 
 # Define prompt template
 PROMPT_TEMPLATE = """
@@ -83,61 +87,89 @@ def generate_answer(url):
     )
 
     # generate answer
-    response = client.models.generate_content(
-        model=model_id,
-        contents=prompt,
-        config=generate_content_config,
-    )
-    return response.text
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+            config=generate_content_config,
+        )
+        return response.text
+    except Exception as e:
+        print(
+            f"\nGemini API error: {e}. Waiting 2 minutes before retrying...", flush=True
+        )
+        time.sleep(120)
+        try:
+            response = client.models.generate_content(
+                model=model_id,
+                contents=prompt,
+                config=generate_content_config,
+            )
+            return response.text
+        except Exception as e2:
+            print(f"\nGemini API error after retry: {e2}. Exiting.", flush=True)
+            raise e2
 
 
 # indentify diseases mentioned in each url
 def diseases_identifier(url_series):
     total = len(url_series)
-
     answered_diseases = []
     for idx, url in enumerate(url_series, 1):
-        answer = generate_answer(url)
-        answered_diseases.append(answer)
-        percent = 100 * idx / total
-        print(f"\rProcessed: {idx}/{total} ({percent:.1f}%)", end='', flush=True)
+        try:
+            answer = generate_answer(url)
+            answered_diseases.append(answer)
+            percent = 100 * idx / total
+            print(f"\rProcessed: {idx}/{total} ({percent:.1f}%)", end="", flush=True)
+        except Exception as e:
+            print(f"\nSaving fetched data due to Gemini API error: {e}", flush=True)
+            partial_df = pd.DataFrame(
+                {"url": url_series[: idx - 1], "mentioned_diseases": answered_diseases}
+            )
+            partial_df.to_csv(
+                mapping_output_dir.replace(".csv", "_partial.csv"), index=False
+            )
+            print(
+                f"Partial results saved to {mapping_output_dir.replace('.csv', '_partial.csv')}"
+            )
+            sys.exit(1)
     print()  # Move to next line after completion
-    return pd.DataFrame({'url': url_series, 'mentioned_diseases': answered_diseases})
+    return pd.DataFrame({"url": url_series, "mentioned_diseases": answered_diseases})
 
 
-results_df = diseases_identifier(urls['url'])
+results_df = diseases_identifier(urls["url"])
 
 # Pre-process the results_df
 result_cleanned = results_df.copy()
 result_cleanned = result_cleanned.assign(
-    mentioned_diseases=result_cleanned['mentioned_diseases'].str.split(';')
-).explode('mentioned_diseases')
-result_cleanned['mentioned_diseases'] = (
-    result_cleanned['mentioned_diseases'].str.strip().str.lower()
+    mentioned_diseases=result_cleanned["mentioned_diseases"].str.split(";")
+).explode("mentioned_diseases")
+result_cleanned["mentioned_diseases"] = (
+    result_cleanned["mentioned_diseases"].str.strip().str.lower()
 )
 
 # Pre-process the diseases data
 diseases_cleaned = diseases.copy()
-diseases_cleaned['disease_lower'] = (
-    diseases_cleaned['TenNhomBenh'].str.strip().str.lower()
+diseases_cleaned["disease_lower"] = (
+    diseases_cleaned["TenNhomBenh"].str.strip().str.lower()
 )
 
 # Merge the results
 mapping_df = pd.merge(
     diseases_cleaned,
     result_cleanned,
-    left_on='disease_lower',
-    right_on='mentioned_diseases',
-    how='inner',
+    left_on="disease_lower",
+    right_on="mentioned_diseases",
+    how="inner",
 )
-mapping_df.rename(columns={'TenNhomBenh': 'disease'}, inplace=True)
-mapping_df = mapping_df[['url', 'disease']]
+mapping_df.rename(columns={"TenNhomBenh": "disease"}, inplace=True)
+mapping_df = mapping_df[["url", "disease"]]
 
 # Sort the mapping_df by url
-mapping_df = mapping_df.sort_values(by='url').reset_index(drop=True)
+mapping_df = mapping_df.sort_values(by="url").reset_index(drop=True)
 
 # Add a column for total diseases mentioned per url
-mapping_df['total_diseases'] = mapping_df.groupby('url')['url'].transform('count')
+mapping_df["total_diseases"] = mapping_df.groupby("url")["url"].transform("count")
 
 # Save the mapping results to a CSV file
 mapping_df.to_csv(mapping_output_dir, index=False)
