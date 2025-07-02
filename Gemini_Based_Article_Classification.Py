@@ -28,8 +28,11 @@ urls = pd.read_csv(urls_dir)
 urls.rename(columns={0: 'url'}, inplace=True)
 urls['url'] = urls['destinationURL_cleaned'].str.strip()
 
+# Slicing the urls to get a subset for testing
+urls = urls.iloc[401:800].reset_index(drop=True)
+
 # Define prompt template
-PROMPT_TEMPLATE = '''
+PROMPT_TEMPLATE = """
 You are a classification assistant.
 
 Given the blog at this URL:
@@ -42,7 +45,7 @@ INSTRUCTIONS:
 - Mark a disease only if the article has at least 1000 words of real content about it (e.g. symptoms, treatment, prevention, vaccines).
 - The disease MUST relevant to the article's main content.
 - Ignore diseases that are only listed, briefly mentioned, or appear in ads, footers, package listings, catalogs, price tables, or promotional content.
-- Focus only on the main body of the article. Ignore content in sidebars, headers, footers, navigation menus, and sections like "Related Articles," "Same Topic," or similar lists of other articles.
+- Focus only on the main body of the article.
 - Ignore the whole url if the page contents is a product catalog, summary list, or pricing page.
 - Do not guess. If unsure, exclude it.
 
@@ -51,7 +54,8 @@ Return only a semicolon-separated list of matching disease names exactly as writ
 If none match, return: "none"
 
 DO NOT explain. DO NOT add notes. ONLY return the list.
-'''
+"""
+
 
 # Generate Answer
 def generate_answer(url):
@@ -59,7 +63,7 @@ def generate_answer(url):
     prompt = PROMPT_TEMPLATE.format(url=url, diseases_list=diseases_list)
 
     # create client
-    client = genai.Client(api_key= GEMINI_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
     # Enable the ability to browse the url content
     tools = [
@@ -69,8 +73,9 @@ def generate_answer(url):
     # Define the content generation configuration
     generate_content_config = types.GenerateContentConfig(
         max_output_tokens=1000,
-        temperature=0.0,
-        thinking_config = types.ThinkingConfig(
+        temperature=0,
+        top_p=0.99,
+        thinking_config=types.ThinkingConfig(
             thinking_budget=0,
         ),
         tools=tools,
@@ -79,16 +84,17 @@ def generate_answer(url):
 
     # generate answer
     response = client.models.generate_content(
-        model= model_id,
-        contents= prompt,
+        model=model_id,
+        contents=prompt,
         config=generate_content_config,
     )
     return response.text
 
+
 # indentify diseases mentioned in each url
 def diseases_identifier(url_series):
     total = len(url_series)
-    
+
     answered_diseases = []
     for idx, url in enumerate(url_series, 1):
         answer = generate_answer(url)
@@ -96,10 +102,8 @@ def diseases_identifier(url_series):
         percent = 100 * idx / total
         print(f"\rProcessed: {idx}/{total} ({percent:.1f}%)", end='', flush=True)
     print()  # Move to next line after completion
-    return pd.DataFrame({
-        'url': url_series,
-        'mentioned_diseases': answered_diseases
-    })
+    return pd.DataFrame({'url': url_series, 'mentioned_diseases': answered_diseases})
+
 
 results_df = diseases_identifier(urls['url'])
 
@@ -108,11 +112,15 @@ result_cleanned = results_df.copy()
 result_cleanned = result_cleanned.assign(
     mentioned_diseases=result_cleanned['mentioned_diseases'].str.split(';')
 ).explode('mentioned_diseases')
-result_cleanned['mentioned_diseases'] = result_cleanned['mentioned_diseases'].str.strip().str.lower()
+result_cleanned['mentioned_diseases'] = (
+    result_cleanned['mentioned_diseases'].str.strip().str.lower()
+)
 
 # Pre-process the diseases data
 diseases_cleaned = diseases.copy()
-diseases_cleaned['disease_lower'] = diseases_cleaned['TenNhomBenh'].str.strip().str.lower()
+diseases_cleaned['disease_lower'] = (
+    diseases_cleaned['TenNhomBenh'].str.strip().str.lower()
+)
 
 # Merge the results
 mapping_df = pd.merge(
@@ -120,7 +128,7 @@ mapping_df = pd.merge(
     result_cleanned,
     left_on='disease_lower',
     right_on='mentioned_diseases',
-    how='inner'
+    how='inner',
 )
 mapping_df.rename(columns={'TenNhomBenh': 'disease'}, inplace=True)
 mapping_df = mapping_df[['url', 'disease']]
